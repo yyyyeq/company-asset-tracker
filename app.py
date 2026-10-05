@@ -49,15 +49,57 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 通用過濾與搜尋小工具函式 (增加庫別篩選)
+# 動態抓取「同仁姓名與工號對照表」
+def get_employee_directory():
+    res = supabase.table("assets").select("holder_name, user_id_code").execute()
+    data = res.data or []
+    if not data:
+        return pd.DataFrame(columns=["同仁姓名", "工號", "持有設備總數"])
+    
+    df_emp = pd.DataFrame(data)
+    # 過濾空名字
+    df_emp = df_emp[df_emp["holder_name"].notna() & (df_emp["holder_name"].str.strip() != "") & (df_emp["holder_name"] != "None")]
+    if df_emp.empty:
+        return pd.DataFrame(columns=["同仁姓名", "工號", "持有設備總數"])
+    
+    df_emp["holder_name"] = df_emp["holder_name"].astype(str).str.strip()
+    df_emp["user_id_code"] = df_emp["user_id_code"].fillna("").astype(str).str.strip().replace({"None": "", "nan": ""})
+    
+    # 統計每人持有筆數並去重
+    summary = df_emp.groupby(["holder_name", "user_id_code"]).size().reset_index(name="持有設備總數")
+    summary = summary.rename(columns={"holder_name": "同仁姓名", "user_id_code": "工號"})
+    summary = summary.sort_values(by="同仁姓名").reset_index(drop=True)
+    return summary
+
+# 通用過濾與搜尋小工具函式 (含：A 方案 人員工號收合速查表)
 def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
+    # 做法 A：收合式人員與工號對照小工具
+    with st.expander("👥 點此展開【同仁姓名與工號速查表】", expanded=False):
+        emp_df = get_employee_directory()
+        if not emp_df.empty:
+            q_col, count_col = st.columns([2, 1])
+            emp_search = q_col.text_input("🔍 速查同仁名單（輸入姓名或工號關鍵字）", key=f"emp_search_{menu_name}")
+            
+            filtered_emp = emp_df.copy()
+            if emp_search:
+                s = emp_search.strip().lower()
+                filtered_emp = filtered_emp[
+                    filtered_emp["同仁姓名"].str.lower().str.contains(s) | 
+                    filtered_emp["工號"].str.lower().str.contains(s)
+                ]
+            count_col.caption(f"共符合 {len(filtered_emp)} 位同仁")
+            st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=180)
+        else:
+            st.caption("目前資料庫中尚無同仁姓名資料，匯入或建檔後將自動彙整。")
+
+    # 主搜尋列
     c1, c2, c3 = st.columns([1, 1, 2])
     status_filter = c1.selectbox("狀態篩選", STATUS_OPTIONS, key=f"status_{menu_name}")
     wh_filter = c2.selectbox("庫別篩選", WAREHOUSE_OPTIONS, key=f"wh_{menu_name}")
-    keyword = c3.text_input(f"🔍 搜尋 ({placeholder_text})", key=f"kw_{menu_name}")
+    keyword = c3.text_input(f"🔍 搜尋資產 ({placeholder_text})", key=f"kw_{menu_name}")
     return status_filter, wh_filter, keyword
 
-# 通用取得資產並依關鍵字與庫別搜尋
+# 通用取得資產並依關鍵字搜尋
 def fetch_and_filter_data(asset_type_list, status_filter, wh_filter, keyword):
     query = supabase.table("assets").select("*")
     if asset_type_list:
@@ -335,7 +377,7 @@ elif menu == "📦 低值品":
     with c_del_quick.expander("🗑️ 輸入編號/描述直接刪除", expanded=False):
         with st.form("del_by_code_lv"):
             del_input = st.text_input("輸入欲刪除的「資產編號」或「物料描述」")
-            confirm_check = st.checkbox("⚠️ 我確定要刪除")
+            confirm_check = st.checkbox("⚠️️ 我確定要刪除")
             btn_del_lv = st.form_submit_button("立即刪除")
             if btn_del_lv:
                 if not del_input.strip():
@@ -466,7 +508,7 @@ elif menu == "📱 手機 (樣機/外購機)":
     with c_del_quick.expander("🗑️ 輸入 IMEI / PCB / 代碼直接刪除", expanded=False):
         with st.form("del_by_code_phone"):
             del_p_input = st.text_input("輸入欲刪除的「IMEI」或「PCB 號碼」或「物料代碼」")
-            confirm_check = st.checkbox("⚠️ 我確定要刪除")
+            confirm_check = st.checkbox("⚠️️ 我確定要刪除")
             btn_del_phone = st.form_submit_button("立即刪除")
             if btn_del_phone:
                 if not del_p_input.strip():
@@ -616,7 +658,7 @@ elif menu == "🔄 狀態異動與轉移":
             st.error("查無此編號/IMEI/PCB/物料代碼，請重新確認。")
 
 # ========================================================
-# 6. 批次匯入 (支援庫別辨識)
+# 6. 批次匯入
 # ========================================================
 elif menu == "📥 批次匯入 (Excel/CSV)":
     st.header("📥 資產資料批次匯入")
