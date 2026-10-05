@@ -4,10 +4,68 @@ from datetime import datetime
 from supabase import create_client, Client
 
 st.set_page_config(
-    page_title="資產管理資料庫",
-    page_icon="🏢",
-    layout="wide"
+    page_title="資產管理中心",
+    page_icon="💻",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# 注入現代化企業風格 CSS
+st.markdown("""
+<style>
+    /* 全域字體與背景優化 */
+    html, body, [class*="css"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    /* KPI 統計卡片 */
+    .metric-card {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .metric-label {
+        font-size: 0.85rem;
+        color: #64748b;
+        font-weight: 500;
+        margin-bottom: 4px;
+    }
+    .metric-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    
+    /* 側邊欄美化 */
+    [data-testid="stSidebar"] {
+        background-color: #f8fafc;
+        border-right: 1px solid #e2e8f0;
+    }
+    
+    /* 按鈕圓角與陰影 */
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.15s ease;
+    }
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    
+    /* Expander 收合框美化 */
+    .streamlit-expanderHeader {
+        background-color: #f1f5f9;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # 取得 Supabase 連線
 @st.cache_resource
@@ -35,9 +93,10 @@ def safe_batch_delete(supabase_client, id_list, chunk_size=20):
         supabase_client.table("assets").delete().in_("id", chunk).execute()
 
 # 左側邊欄選單分頁
-st.sidebar.title("🏢 資產資料庫")
+st.sidebar.markdown("### 🏢 資產管理平台")
+st.sidebar.caption("Asset Tracking System")
 menu = st.sidebar.radio(
-    "業務分類選單",
+    "模組選單",
     [
         "💼 固定資產",
         "📦 低值品",
@@ -68,9 +127,39 @@ def get_employee_directory():
     summary = summary.rename(columns={"holder_name": "姓名", "user_id_code": "工號"})
     return summary
 
-# 通用過濾與搜尋小工具函式 (含：依順序排列的工號對照表)
+# 頂部精美指標卡 (KPI Cards)
+def render_metric_header(df):
+    total = len(df)
+    in_use = len(df[df["status"] == "使用中"])
+    idle = len(df[df["status"].isin(["閒置", "備用"])])
+    dept_wh = len(df[df["warehouse_type"] == "部門倉"]) if "warehouse_type" in df.columns else 0
+    
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">總數量</div><div class="metric-value">{total} <span style="font-size:0.9rem;font-weight:400;color:#94a3b8">件</span></div></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">使用中</div><div class="metric-value" style="color:#16a34a">{in_use} <span style="font-size:0.9rem;font-weight:400;color:#94a3b8">件</span></div></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">庫存閒置/備用</div><div class="metric-value" style="color:#2563eb">{idle} <span style="font-size:0.9rem;font-weight:400;color:#94a3b8">件</span></div></div>', unsafe_allow_html=True)
+    with c4:
+        st.markdown(f'<div class="metric-card"><div class="metric-label">部門公用倉</div><div class="metric-value" style="color:#7c3aed">{dept_wh} <span style="font-size:0.9rem;font-weight:400;color:#94a3b8">件</span></div></div>', unsafe_allow_html=True)
+    st.write("")
+
+# 狀態視覺化標籤
+def format_status_badge(status):
+    if status == "使用中":
+        return "🟢 使用中"
+    elif status == "轉移中":
+        return "🟡 轉移中"
+    elif status in ["閒置", "備用"]:
+        return "🔵 " + str(status)
+    elif status == "待報廢":
+        return "🔴 待報廢"
+    return str(status)
+
+# 搜尋列與速查表
 def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
-    with st.expander("👥 點此展開【姓名與工號速查表】", expanded=False):
+    with st.expander("👥 姓名與工號速查名冊", expanded=False):
         emp_df = get_employee_directory()
         if not emp_df.empty:
             q_col, sort_col, order_col = st.columns([2, 1, 1])
@@ -86,23 +175,19 @@ def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
                     filtered_emp["工號"].str.lower().str.contains(s)
                 ]
             
-            # 執行排序
             is_ascending = (sort_order == "由小到大 (遞增)")
             filtered_emp = filtered_emp.sort_values(by=sort_by, ascending=is_ascending).reset_index(drop=True)
-            
-            st.caption(f"共 {len(filtered_emp)} 位（目前依【{sort_by}】{sort_order} 排列）")
-            st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=200)
+            st.caption(f"共 {len(filtered_emp)} 位（依【{sort_by}】{sort_order}）")
+            st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=180)
         else:
-            st.caption("目前資料庫中尚無姓名資料。")
+            st.caption("目前尚無人員資料。")
 
-    # 主搜尋列
     c1, c2, c3 = st.columns([1, 1, 2])
     status_filter = c1.selectbox("狀態篩選", STATUS_OPTIONS, key=f"status_{menu_name}")
     wh_filter = c2.selectbox("庫別篩選", WAREHOUSE_OPTIONS, key=f"wh_{menu_name}")
     keyword = c3.text_input(f"🔍 搜尋資產 ({placeholder_text})", key=f"kw_{menu_name}")
     return status_filter, wh_filter, keyword
 
-# 通用取得資產並依關鍵字搜尋
 def fetch_and_filter_data(asset_type_list, status_filter, wh_filter, keyword):
     query = supabase.table("assets").select("*")
     if asset_type_list:
@@ -123,7 +208,6 @@ def fetch_and_filter_data(asset_type_list, status_filter, wh_filter, keyword):
         
     return df
 
-# 格式化表格
 def clean_display_df(df, col_map):
     for k in col_map.keys():
         if k not in df.columns:
@@ -140,9 +224,13 @@ def clean_display_df(df, col_map):
 # 1. 固定資產
 # ========================================================
 if menu == "💼 固定資產":
-    st.header("💼 固定資產清單")
-    status_filter, wh_filter, keyword = render_filter_and_search("固定資產", "資產編號 / 物料描述 / 使用人 / 工號")
+    st.header("💼 固定資產管理")
     
+    raw_df = supabase.table("assets").select("*").eq("asset_type", "固定資產").execute().data
+    if raw_df:
+        render_metric_header(pd.DataFrame(raw_df))
+    
+    status_filter, wh_filter, keyword = render_filter_and_search("固定資產", "資產編號 / 物料描述 / 使用人 / 工號")
     df = fetch_and_filter_data(["固定資產"], status_filter, wh_filter, keyword)
     
     if not df.empty:
@@ -161,11 +249,12 @@ if menu == "💼 固定資產":
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["geo_location"] = df["geo_location"].fillna(df.get("location", ""))
         df["warehouse_type"] = df["warehouse_type"].fillna("個人倉")
+        df["status"] = df["status"].apply(format_status_badge)
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
         select_all_fa = c_sel_all.checkbox("🔘 全選此畫面資料", key="select_all_fa")
-        c_info.caption(f"共 {len(display_df)} 筆固定資產")
+        c_info.caption(f"顯示共 {len(display_df)} 筆固定資產")
         
         display_df.insert(0, "選取", select_all_fa)
         
@@ -177,11 +266,8 @@ if menu == "💼 固定資產":
             key="editor_fa",
             column_config={
                 "id": None,
-                "選取": st.column_config.CheckboxColumn(
-                    "選取",
-                    help="勾選欲批次刪除的項目",
-                    default=select_all_fa,
-                )
+                "選取": st.column_config.CheckboxColumn("選取", default=select_all_fa),
+                "狀態": st.column_config.TextColumn("狀態", width="small")
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
@@ -193,18 +279,18 @@ if menu == "💼 固定資產":
                 if st.button(f"🗑️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_fa"):
                     ids_to_del = selected_rows["id"].tolist()
                     safe_batch_delete(supabase, ids_to_del)
-                    st.success(f"已成功刪除 {len(ids_to_del)} 筆固定資產！")
+                    st.success(f"已刪除 {len(ids_to_del)} 筆固定資產！")
                     st.rerun()
         with c_clear_all:
             if st.button("💣 一鍵清空所有固定資產", key="btn_clear_fa"):
                 supabase.table("assets").delete().eq("asset_type", "固定資產").execute()
-                st.success("已清空所有固定資產！")
+                st.success("已清空固定資產！")
                 st.rerun()
         with c_export:
             csv = display_df.drop(columns=["選取", "id"], errors="ignore").to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 匯出固定資產清單 (CSV)", csv, "固定資產清單.csv", "text/csv")
+            st.download_button("📥 匯出清單 (CSV)", csv, "固定資產清單.csv", "text/csv")
     else:
-        st.info("目前尚無固定資產資料。")
+        st.info("尚無固定資產資料。")
 
     st.divider()
     c_add, c_del_quick = st.columns(2)
@@ -249,7 +335,7 @@ if menu == "💼 固定資產":
                     except Exception as e:
                         st.error(f"新增失敗：{str(e)}")
 
-    with c_del_quick.expander("🗑️ 輸入資產編號直接刪除", expanded=False):
+    with c_del_quick.expander("🗑️️ 輸入資產編號直接刪除", expanded=False):
         with st.form("del_by_code_fa"):
             del_tag_input = st.text_input("請輸入欲刪除的「資產編號」")
             confirm_check = st.checkbox("⚠️ 我確定要刪除這筆資產")
@@ -271,9 +357,13 @@ if menu == "💼 固定資產":
 # 2. 低值品
 # ========================================================
 elif menu == "📦 低值品":
-    st.header("📦 低值品清單")
-    status_filter, wh_filter, keyword = render_filter_and_search("低值品", "資產編號 / 資物料描述 / 使用人 / 工號")
+    st.header("📦 低值品管理")
     
+    raw_df = supabase.table("assets").select("*").eq("asset_type", "低值品").execute().data
+    if raw_df:
+        render_metric_header(pd.DataFrame(raw_df))
+        
+    status_filter, wh_filter, keyword = render_filter_and_search("低值品", "資產編號 / 資物料描述 / 使用人 / 工號")
     df = fetch_and_filter_data(["低值品"], status_filter, wh_filter, keyword)
     
     if not df.empty:
@@ -291,11 +381,12 @@ elif menu == "📦 低值品":
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["location"] = df["location"].fillna(df.get("geo_location", ""))
         df["warehouse_type"] = df["warehouse_type"].fillna("個人倉")
+        df["status"] = df["status"].apply(format_status_badge)
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
         select_all_lv = c_sel_all.checkbox("🔘 全選此畫面資料", key="select_all_lv")
-        c_info.caption(f"共 {len(display_df)} 筆低值品")
+        c_info.caption(f"顯示共 {len(display_df)} 筆低值品")
         
         display_df.insert(0, "選取", select_all_lv)
         
@@ -307,11 +398,8 @@ elif menu == "📦 低值品":
             key="editor_lv",
             column_config={
                 "id": None,
-                "選取": st.column_config.CheckboxColumn(
-                    "選取",
-                    help="勾選欲批次刪除的項目",
-                    default=select_all_lv,
-                )
+                "選取": st.column_config.CheckboxColumn("選取", default=select_all_lv),
+                "狀態": st.column_config.TextColumn("狀態", width="small")
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
@@ -323,18 +411,18 @@ elif menu == "📦 低值品":
                 if st.button(f"🗑️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_lv"):
                     ids_to_del = selected_rows["id"].tolist()
                     safe_batch_delete(supabase, ids_to_del)
-                    st.success(f"已成功刪除 {len(ids_to_del)} 筆低值品！")
+                    st.success(f"已刪除 {len(ids_to_del)} 筆低值品！")
                     st.rerun()
         with c_clear_all:
             if st.button("💣 一鍵清空所有低值品", key="btn_clear_lv"):
                 supabase.table("assets").delete().eq("asset_type", "低值品").execute()
-                st.success("已清空所有低值品！")
+                st.success("已清空低值品！")
                 st.rerun()
         with c_export:
             csv = display_df.drop(columns=["選取", "id"], errors="ignore").to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 匯出低值品清單 (CSV)", csv, "低值品清單.csv", "text/csv")
+            st.download_button("📥 匯出清單 (CSV)", csv, "低值品清單.csv", "text/csv")
     else:
-        st.info("目前尚無低值品資料。")
+        st.info("尚無低值品資料。")
 
     st.divider()
     c_add, c_del_quick = st.columns(2)
@@ -400,10 +488,14 @@ elif menu == "📦 低值品":
 # 3. 手機 (樣機/外購機)
 # ========================================================
 elif menu == "📱 手機 (樣機/外購機)":
-    st.header("📱 手機 (樣機 / 外購機 / 測試機) 清單")
-    status_filter, wh_filter, keyword = render_filter_and_search("手機", "PCB / IMEI / 物料描述 / 使用人")
+    st.header("📱 手機 (樣機 / 外購機 / 測試機) 管理")
     
     phone_types = ["手機 (樣機/外購機)", "樣機", "外購機", "手機"]
+    raw_df = supabase.table("assets").select("*").in_("asset_type", phone_types).execute().data
+    if raw_df:
+        render_metric_header(pd.DataFrame(raw_df))
+        
+    status_filter, wh_filter, keyword = render_filter_and_search("手機", "PCB / IMEI / 物料描述 / 使用人")
     df = fetch_and_filter_data(phone_types, status_filter, wh_filter, keyword)
     
     if not df.empty:
@@ -420,11 +512,12 @@ elif menu == "📱 手機 (樣機/外購機)":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["warehouse_type"] = df["warehouse_type"].fillna("個人倉")
+        df["status"] = df["status"].apply(format_status_badge)
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
         select_all_ph = c_sel_all.checkbox("🔘 全選此畫面資料", key="select_all_ph")
-        c_info.caption(f"共 {len(display_df)} 筆手機設備")
+        c_info.caption(f"顯示共 {len(display_df)} 筆手機設備")
         
         display_df.insert(0, "選取", select_all_ph)
         
@@ -436,11 +529,8 @@ elif menu == "📱 手機 (樣機/外購機)":
             key="editor_ph",
             column_config={
                 "id": None,
-                "選取": st.column_config.CheckboxColumn(
-                    "選取",
-                    help="勾選欲批次刪除的項目",
-                    default=select_all_ph,
-                )
+                "選取": st.column_config.CheckboxColumn("選取", default=select_all_ph),
+                "狀態": st.column_config.TextColumn("狀態", width="small")
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
@@ -452,18 +542,18 @@ elif menu == "📱 手機 (樣機/外購機)":
                 if st.button(f"🗑️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_ph"):
                     ids_to_del = selected_rows["id"].tolist()
                     safe_batch_delete(supabase, ids_to_del)
-                    st.success(f"已成功刪除 {len(ids_to_del)} 筆手機資料！")
+                    st.success(f"已刪除 {len(ids_to_del)} 筆手機資料！")
                     st.rerun()
         with c_clear_all:
             if st.button("💣 一鍵清空所有手機設備", key="btn_clear_ph"):
                 supabase.table("assets").delete().in_("asset_type", phone_types).execute()
-                st.success("已清空所有手機資料！")
+                st.success("已清空手機資料！")
                 st.rerun()
         with c_export:
             csv = display_df.drop(columns=["選取", "id"], errors="ignore").to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 匯出手機清單 (CSV)", csv, "手機樣機清單.csv", "text/csv")
+            st.download_button("📥 匯出清單 (CSV)", csv, "手機樣機清單.csv", "text/csv")
     else:
-        st.info("目前尚無手機樣機/外購機資料。")
+        st.info("尚無手機資料。")
 
     st.divider()
     c_add, c_del_quick = st.columns(2)
@@ -522,7 +612,7 @@ elif menu == "📱 手機 (樣機/外購機)":
                     target = del_p_input.strip()
                     res = supabase.table("assets").delete().or_(f"imei_no.eq.{target},pcb_no.eq.{target},material_code.eq.{target}").execute()
                     if res.data:
-                        st.success(f"🗑️️ 已成功刪除 {len(res.data)} 筆手機資料！")
+                        st.success(f"🗑️ 已成功刪除 {len(res.data)} 筆手機資料！")
                         st.rerun()
                     else:
                         st.error("查無符合資料！")
@@ -531,9 +621,13 @@ elif menu == "📱 手機 (樣機/外購機)":
 # 4. 物料管理
 # ========================================================
 elif menu == "🔩 物料管理":
-    st.header("🔩 物料清單")
-    status_filter, wh_filter, keyword = render_filter_and_search("物料", "物料代碼 / PCB / 物料描述 / 使用人")
+    st.header("🔩 物料管理")
     
+    raw_df = supabase.table("assets").select("*").in_("asset_type", ["物料", "耗材與物料"]).execute().data
+    if raw_df:
+        render_metric_header(pd.DataFrame(raw_df))
+        
+    status_filter, wh_filter, keyword = render_filter_and_search("物料", "物料代碼 / PCB / 物料描述 / 使用人")
     df = fetch_and_filter_data(["物料", "耗材與物料"], status_filter, wh_filter, keyword)
     
     if not df.empty:
@@ -551,11 +645,12 @@ elif menu == "🔩 物料管理":
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["pcb_no"] = df["pcb_no"].fillna(df.get("imei_no", ""))
         df["warehouse_type"] = df["warehouse_type"].fillna("部門倉")
+        df["status"] = df["status"].apply(format_status_badge)
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
         select_all_mat = c_sel_all.checkbox("🔘 全選此畫面資料", key="select_all_mat")
-        c_info.caption(f"共 {len(display_df)} 筆物料項目")
+        c_info.caption(f"顯示共 {len(display_df)} 筆物料項目")
         
         display_df.insert(0, "選取", select_all_mat)
         
@@ -567,11 +662,8 @@ elif menu == "🔩 物料管理":
             key="editor_mat",
             column_config={
                 "id": None,
-                "選取": st.column_config.CheckboxColumn(
-                    "選取",
-                    help="勾選欲批次刪除的項目",
-                    default=select_all_mat,
-                )
+                "選取": st.column_config.CheckboxColumn("選取", default=select_all_mat),
+                "狀態": st.column_config.TextColumn("狀態", width="small")
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
@@ -580,27 +672,27 @@ elif menu == "🔩 物料管理":
         c_del_batch, c_clear_all, c_export = st.columns([1.5, 1.5, 2])
         with c_del_batch:
             if not selected_rows.empty:
-                if st.button(f"🗑️️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_mat"):
+                if st.button(f"🗑️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_mat"):
                     ids_to_del = selected_rows["id"].tolist()
                     safe_batch_delete(supabase, ids_to_del)
-                    st.success(f"已成功刪除 {len(ids_to_del)} 筆物料！")
+                    st.success(f"已刪除 {len(ids_to_del)} 筆物料！")
                     st.rerun()
         with c_clear_all:
             if st.button("💣 一鍵清空所有物料", key="btn_clear_mat"):
                 supabase.table("assets").delete().in_("asset_type", ["物料", "耗材與物料"]).execute()
-                st.success("已清空所有物料！")
+                st.success("已清空物料！")
                 st.rerun()
         with c_export:
             csv = display_df.drop(columns=["選取", "id"], errors="ignore").to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 匯出物料清單 (CSV)", csv, "物料清單.csv", "text/csv")
+            st.download_button("📥 匯出清單 (CSV)", csv, "物料清單.csv", "text/csv")
     else:
-        st.info("目前尚無物料資料。")
+        st.info("尚無物料資料。")
 
 # ========================================================
 # 5. 狀態異動與轉移
 # ========================================================
 elif menu == "🔄 狀態異動與轉移":
-    st.header("資產狀態轉移與使用人/庫別變更")
+    st.header("🔄 資產狀態轉移與使用人/庫別變更")
     
     asset_query_input = st.text_input("輸入欲異動之「資產編號」或「IMEI」或「PCB」或「物料代碼」")
     
@@ -819,7 +911,7 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
 # 7. 統計看板
 # ========================================================
 elif menu == "📊 統計看板":
-    st.header("全公司資產分佈概況")
+    st.header("📊 全公司資產分佈概況")
     res = supabase.table("assets").select("*").execute()
     df = pd.DataFrame(res.data)
     
