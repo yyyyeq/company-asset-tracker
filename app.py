@@ -75,7 +75,7 @@ VIEW_COLUMN_MAP = {
 }
 
 # 側邊欄導航
-st.sidebar.title("🏢 資產大資料庫")
+st.sidebar.title("🏢 資產資料庫")
 menu = st.sidebar.radio(
     "導航選單",
     ["📋 資產清單與各類別視圖", "🔄 狀態異動與轉移", "➕ 單筆資料建檔", "📥 Excel/CSV 批次匯入", "📊 數據看板"]
