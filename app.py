@@ -90,7 +90,7 @@ def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
             is_ascending = (sort_order == "由小到大 (遞增)")
             filtered_emp = filtered_emp.sort_values(by=sort_by, ascending=is_ascending).reset_index(drop=True)
             
-            st.caption(f"共 {len(filtered_emp)} 位同仁（目前依【{sort_by}】{sort_order} 排列）")
+            st.caption(f"共 {len(filtered_emp)} 位（目前依【{sort_by}】{sort_order} 排列）")
             st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=200)
         else:
             st.caption("目前資料庫中尚無姓名資料。")
