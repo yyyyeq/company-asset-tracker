@@ -4,7 +4,7 @@ from datetime import datetime
 from supabase import create_client, Client
 
 st.set_page_config(
-    page_title="資產管理資料庫",
+    page_title="企業資產管理大資料庫",
     page_icon="🏢",
     layout="wide"
 )
@@ -22,9 +22,11 @@ except Exception as e:
     st.error("❌ 連線 Supabase 失敗，請檢查 Streamlit Secrets 設定！")
     st.stop()
 
-# 狀態定義
+# 選項定義
 STATUS_OPTIONS = ["全部", "使用中", "轉移中", "閒置", "備用", "待報廢"]
 RAW_STATUS_OPTIONS = ["使用中", "轉移中", "閒置", "備用", "待報廢"]
+WAREHOUSE_OPTIONS = ["全部", "個人倉", "部門倉"]
+RAW_WAREHOUSE_OPTIONS = ["個人倉", "部門倉"]
 
 # 安全分批刪除函式
 def safe_batch_delete(supabase_client, id_list, chunk_size=20):
@@ -33,7 +35,7 @@ def safe_batch_delete(supabase_client, id_list, chunk_size=20):
         supabase_client.table("assets").delete().in_("id", chunk).execute()
 
 # 左側邊欄選單分頁
-st.sidebar.title("🏢 資產資料庫")
+st.sidebar.title("🏢 資產大資料庫")
 menu = st.sidebar.radio(
     "業務分類選單",
     [
@@ -47,27 +49,30 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 通用過濾與搜尋小工具函式
+# 通用過濾與搜尋小工具函式 (增加庫別篩選)
 def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
-    c1, c2 = st.columns([1, 2])
+    c1, c2, c3 = st.columns([1, 1, 2])
     status_filter = c1.selectbox("狀態篩選", STATUS_OPTIONS, key=f"status_{menu_name}")
-    keyword = c2.text_input(f"🔍 搜尋 ({placeholder_text})", key=f"kw_{menu_name}")
-    return status_filter, keyword
+    wh_filter = c2.selectbox("庫別篩選", WAREHOUSE_OPTIONS, key=f"wh_{menu_name}")
+    keyword = c3.text_input(f"🔍 搜尋 ({placeholder_text})", key=f"kw_{menu_name}")
+    return status_filter, wh_filter, keyword
 
-# 通用取得資產並依關鍵字搜尋
-def fetch_and_filter_data(asset_type_list, status_filter, keyword):
+# 通用取得資產並依關鍵字與庫別搜尋
+def fetch_and_filter_data(asset_type_list, status_filter, wh_filter, keyword):
     query = supabase.table("assets").select("*")
     if asset_type_list:
         query = query.in_("asset_type", asset_type_list)
     if status_filter != "全部":
         query = query.eq("status", status_filter)
+    if wh_filter != "全部":
+        query = query.eq("warehouse_type", wh_filter)
     
     data = query.order("created_at", desc=True).execute().data
     df = pd.DataFrame(data)
     
     if not df.empty and keyword:
         kw = keyword.lower().strip()
-        searchable_cols = [c for c in ["asset_tag", "material_desc", "name", "category", "material_code", "pcb_no", "imei_no", "holder_name", "user_id_code", "geo_location", "detailed_location", "notes"] if c in df.columns]
+        searchable_cols = [c for c in ["asset_tag", "material_desc", "name", "category", "material_code", "pcb_no", "imei_no", "holder_name", "user_id_code", "geo_location", "detailed_location", "notes", "warehouse_type"] if c in df.columns]
         mask = df[searchable_cols].fillna("").astype(str).apply(lambda row: row.str.lower().str.contains(kw)).any(axis=1)
         df = df[mask]
         
@@ -91,14 +96,15 @@ def clean_display_df(df, col_map):
 # ========================================================
 if menu == "💼 固定資產":
     st.header("💼 固定資產清單")
-    status_filter, keyword = render_filter_and_search("固定資產", "資產編號 / 物料描述 / 使用人 / 工號")
+    status_filter, wh_filter, keyword = render_filter_and_search("固定資產", "資產編號 / 物料描述 / 使用人 / 工號")
     
-    df = fetch_and_filter_data(["固定資產"], status_filter, keyword)
+    df = fetch_and_filter_data(["固定資產"], status_filter, wh_filter, keyword)
     
     if not df.empty:
         col_map = {
             "asset_tag": "資產編號",
             "material_desc": "物料描述",
+            "warehouse_type": "庫別",
             "category": "分類",
             "holder_name": "使用人",
             "user_id_code": "使用人工號",
@@ -109,6 +115,7 @@ if menu == "💼 固定資產":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["geo_location"] = df["geo_location"].fillna(df.get("location", ""))
+        df["warehouse_type"] = df["warehouse_type"].fillna("個人倉")
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
@@ -159,14 +166,16 @@ if menu == "💼 固定資產":
 
     with c_add.expander("➕ 快速新增固定資產", expanded=False):
         with st.form("add_fa_form"):
-            fa_tag = st.text_input("資產編號")
-            fa_desc = st.text_input("物料描述 (必填，如: MacBook Pro 14)")
-            fa_cat = st.text_input("分類", value="資訊設備")
-            fa_holder = st.text_input("使用人")
-            fa_uid = st.text_input("使用人工號")
-            fa_geo = st.text_input("地理位置", value="台北辦公室")
-            fa_loc = st.text_input("詳細地點 (如: 7F 機房/桌號)")
-            fa_status = st.selectbox("狀態", RAW_STATUS_OPTIONS, index=2)
+            col_fa_1, col_fa_2 = st.columns(2)
+            fa_tag = col_fa_1.text_input("資產編號")
+            fa_desc = col_fa_2.text_input("物料描述 (必填，如: MacBook Pro 14)")
+            fa_wh = col_fa_1.selectbox("庫別", RAW_WAREHOUSE_OPTIONS, index=0)
+            fa_cat = col_fa_2.text_input("分類", value="資訊設備")
+            fa_holder = col_fa_1.text_input("使用人 / 保管部門")
+            fa_uid = col_fa_2.text_input("使用人工號")
+            fa_geo = col_fa_1.text_input("地理位置", value="台北辦公室")
+            fa_loc = col_fa_2.text_input("詳細地點 (如: 7F 機房/桌號)")
+            fa_status = col_fa_1.selectbox("狀態", RAW_STATUS_OPTIONS, index=2)
             fa_notes = st.text_area("備註說明")
             
             btn_add_fa = st.form_submit_button("確認新增固定資產")
@@ -180,6 +189,7 @@ if menu == "💼 固定資產":
                             "name": fa_desc.strip(),
                             "material_desc": fa_desc.strip(),
                             "asset_type": "固定資產",
+                            "warehouse_type": fa_wh,
                             "category": fa_cat.strip() if fa_cat else "資訊設備",
                             "holder_name": fa_holder.strip() if fa_holder else None,
                             "user_id_code": fa_uid.strip() if fa_uid else None,
@@ -217,14 +227,15 @@ if menu == "💼 固定資產":
 # ========================================================
 elif menu == "📦 低值品":
     st.header("📦 低值品清單")
-    status_filter, keyword = render_filter_and_search("低值品", "資產編號 / 資物料描述 / 使用人 / 工號")
+    status_filter, wh_filter, keyword = render_filter_and_search("低值品", "資產編號 / 資物料描述 / 使用人 / 工號")
     
-    df = fetch_and_filter_data(["低值品"], status_filter, keyword)
+    df = fetch_and_filter_data(["低值品"], status_filter, wh_filter, keyword)
     
     if not df.empty:
         col_map = {
             "asset_tag": "資產編號",
             "material_desc": "資物料描述",
+            "warehouse_type": "庫別",
             "category": "分類",
             "holder_name": "使用人",
             "user_id_code": "使用人工號",
@@ -234,6 +245,7 @@ elif menu == "📦 低值品":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["location"] = df["location"].fillna(df.get("geo_location", ""))
+        df["warehouse_type"] = df["warehouse_type"].fillna("個人倉")
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
@@ -284,13 +296,15 @@ elif menu == "📦 低值品":
 
     with c_add.expander("➕ 快速新增低值品", expanded=False):
         with st.form("add_low_val_form"):
-            lv_tag = st.text_input("資產編號 (無可留空)")
-            lv_desc = st.text_input("資物料描述 (必填，如: 羅技無線滑鼠)")
-            lv_cat = st.text_input("分類", value="硬碟/記憶體/周邊")
-            lv_holder = st.text_input("使用人")
-            lv_uid = st.text_input("使用人工號")
-            lv_loc = st.text_input("位置", value="台北辦公室")
-            lv_status = st.selectbox("狀態", RAW_STATUS_OPTIONS, index=2)
+            col_lv_1, col_lv_2 = st.columns(2)
+            lv_tag = col_lv_1.text_input("資產編號 (無可留空)")
+            lv_desc = col_lv_2.text_input("資物料描述 (必填，如: 羅技無線滑鼠)")
+            lv_wh = col_lv_1.selectbox("庫別", RAW_WAREHOUSE_OPTIONS, index=0)
+            lv_cat = col_lv_2.text_input("分類", value="硬碟/記憶體/周邊")
+            lv_holder = col_lv_1.text_input("使用人 / 保管單位")
+            lv_uid = col_lv_2.text_input("使用人工號")
+            lv_loc = col_lv_1.text_input("位置", value="台北辦公室")
+            lv_status = col_lv_2.selectbox("狀態", RAW_STATUS_OPTIONS, index=2)
             lv_notes = st.text_area("備註說明")
             
             btn_add_lv = st.form_submit_button("確認新增低值品")
@@ -304,6 +318,7 @@ elif menu == "📦 低值品":
                             "name": lv_desc.strip(),
                             "material_desc": lv_desc.strip(),
                             "asset_type": "低值品",
+                            "warehouse_type": lv_wh,
                             "category": lv_cat.strip() if lv_cat else "低值品",
                             "holder_name": lv_holder.strip() if lv_holder else None,
                             "user_id_code": lv_uid.strip() if lv_uid else None,
@@ -341,15 +356,16 @@ elif menu == "📦 低值品":
 # ========================================================
 elif menu == "📱 手機 (樣機/外購機)":
     st.header("📱 手機 (樣機 / 外購機 / 測試機) 清單")
-    status_filter, keyword = render_filter_and_search("手機", "PCB / IMEI / 物料描述 / 使用人")
+    status_filter, wh_filter, keyword = render_filter_and_search("手機", "PCB / IMEI / 物料描述 / 使用人")
     
     phone_types = ["手機 (樣機/外購機)", "樣機", "外購機", "手機"]
-    df = fetch_and_filter_data(phone_types, status_filter, keyword)
+    df = fetch_and_filter_data(phone_types, status_filter, wh_filter, keyword)
     
     if not df.empty:
         col_map = {
             "pcb_no": "PCB",
             "material_desc": "物料描述",
+            "warehouse_type": "庫別",
             "imei_no": "IMEI",
             "material_code": "物料代碼",
             "holder_name": "使用人",
@@ -358,6 +374,7 @@ elif menu == "📱 手機 (樣機/外購機)":
             "notes": "備註"
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
+        df["warehouse_type"] = df["warehouse_type"].fillna("個人倉")
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
@@ -410,12 +427,13 @@ elif menu == "📱 手機 (樣機/外購機)":
         with st.form("add_phone_form"):
             ph_desc = st.text_input("物料描述 (必填，如: Pixel 8 測試機 / iPhone 15)")
             col_p1, col_p2 = st.columns(2)
-            ph_pcb = col_p1.text_input("PCB 號碼")
-            ph_imei = col_p2.text_input("IMEI 號碼")
-            ph_code = col_p1.text_input("物料代碼")
-            ph_holder = col_p2.text_input("使用人")
-            ph_uid = col_p1.text_input("使用人工號")
-            ph_status = col_p2.selectbox("狀態", RAW_STATUS_OPTIONS, index=2)
+            ph_wh = col_p1.selectbox("庫別", RAW_WAREHOUSE_OPTIONS, index=0)
+            ph_pcb = col_p2.text_input("PCB 號碼")
+            ph_imei = col_p1.text_input("IMEI 號碼")
+            ph_code = col_p2.text_input("物料代碼")
+            ph_holder = col_p1.text_input("使用人 / 借測單位")
+            ph_uid = col_p2.text_input("使用人工號")
+            ph_status = col_p1.selectbox("狀態", RAW_STATUS_OPTIONS, index=2)
             ph_notes = st.text_area("備註說明")
             
             btn_add_ph = st.form_submit_button("確認新增手機設備")
@@ -428,6 +446,7 @@ elif menu == "📱 手機 (樣機/外購機)":
                             "name": ph_desc.strip(),
                             "material_desc": ph_desc.strip(),
                             "asset_type": "手機 (樣機/外購機)",
+                            "warehouse_type": ph_wh,
                             "category": "手機",
                             "pcb_no": ph_pcb.strip() if ph_pcb else None,
                             "imei_no": ph_imei.strip() if ph_imei else None,
@@ -468,15 +487,16 @@ elif menu == "📱 手機 (樣機/外購機)":
 # ========================================================
 elif menu == "🔩 物料管理":
     st.header("🔩 物料清單")
-    status_filter, keyword = render_filter_and_search("物料", "物料代碼 / PCB / 物料描述 / 使用人")
+    status_filter, wh_filter, keyword = render_filter_and_search("物料", "物料代碼 / PCB / 物料描述 / 使用人")
     
-    df = fetch_and_filter_data(["物料", "耗材與物料"], status_filter, keyword)
+    df = fetch_and_filter_data(["物料", "耗材與物料"], status_filter, wh_filter, keyword)
     
     if not df.empty:
         col_map = {
             "material_code": "物料代碼",
             "pcb_no": "IMEI／PCB",
             "material_desc": "物料描述",
+            "warehouse_type": "庫別",
             "holder_name": "使用人",
             "user_id_code": "使用人工號",
             "quantity": "數量",
@@ -485,6 +505,7 @@ elif menu == "🔩 物料管理":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["pcb_no"] = df["pcb_no"].fillna(df.get("imei_no", ""))
+        df["warehouse_type"] = df["warehouse_type"].fillna("部門倉")
         display_df = clean_display_df(df, col_map)
         
         c_sel_all, c_info = st.columns([1.2, 3.8])
@@ -534,7 +555,7 @@ elif menu == "🔩 物料管理":
 # 5. 狀態異動與轉移
 # ========================================================
 elif menu == "🔄 狀態異動與轉移":
-    st.header("資產狀態轉移與使用人變更")
+    st.header("資產狀態轉移與使用人/庫別變更")
     
     asset_query_input = st.text_input("輸入欲異動之「資產編號」或「IMEI」或「PCB」或「物料代碼」")
     
@@ -546,27 +567,32 @@ elif menu == "🔄 狀態異動與轉移":
         
         if res.data:
             item = res.data[0]
+            curr_wh = item.get("warehouse_type") or "個人倉"
             curr_holder = item.get('holder_name') or '無'
             curr_code = f" ({item.get('user_id_code')})" if item.get('user_id_code') else ""
-            st.success(f"找到設備：[{item.get('asset_type')}] {item.get('material_desc') or item.get('name')} | 狀態：【{item['status']}】 | 目前使用人：{curr_holder}{curr_code}")
+            st.success(f"找到設備：[{item.get('asset_type')}] {item.get('material_desc') or item.get('name')} | 現屬【{curr_wh}】 | 狀態：【{item['status']}】 | 目前保管人：{curr_holder}{curr_code}")
             
             with st.form("transfer_form"):
-                new_status = st.selectbox("變更後狀態", RAW_STATUS_OPTIONS, index=RAW_STATUS_OPTIONS.index(item['status']) if item['status'] in RAW_STATUS_OPTIONS else 0)
+                col_t1, col_t2 = st.columns(2)
+                new_status = col_t1.selectbox("變更後狀態", RAW_STATUS_OPTIONS, index=RAW_STATUS_OPTIONS.index(item['status']) if item['status'] in RAW_STATUS_OPTIONS else 0)
+                new_wh = col_t2.selectbox("變更後庫別", RAW_WAREHOUSE_OPTIONS, index=RAW_WAREHOUSE_OPTIONS.index(curr_wh) if curr_wh in RAW_WAREHOUSE_OPTIONS else 0)
+                
                 col_u1, col_u2 = st.columns(2)
-                new_holder = col_u1.text_input("新使用人姓名", value=item.get("holder_name") or "")
+                new_holder = col_u1.text_input("新使用人 / 保管單位姓名", value=item.get("holder_name") or "")
                 new_user_id = col_u2.text_input("新使用人工號", value=item.get("user_id_code") or "")
                 
                 col_l1, col_l2 = st.columns(2)
                 new_geo = col_l1.text_input("地理位置", value=item.get("geo_location") or item.get("location") or "台北辦公室")
                 new_detail_loc = col_l2.text_input("詳細地點", value=item.get("detailed_location") or "")
                 
-                transfer_remark = st.text_area("本次異動備註 (如: 移交新進人員、外借測試、歸還庫存)")
+                transfer_remark = st.text_area("本次異動備註 (如: 撥轉至部門公共機房、個人歸還入庫)")
                 operator = st.text_input("經辦人姓名", value="Admin")
                 
                 btn_transfer = st.form_submit_button("確認提交更新")
                 if btn_transfer:
                     supabase.table("assets").update({
                         "status": new_status,
+                        "warehouse_type": new_wh,
                         "holder_name": new_holder.strip() if new_holder else None,
                         "user_id_code": new_user_id.strip() if new_user_id else None,
                         "geo_location": new_geo.strip(),
@@ -578,32 +604,29 @@ elif menu == "🔄 狀態異動與轉移":
                     supabase.table("asset_logs").insert({
                         "asset_id": item["id"],
                         "asset_tag": item.get("asset_tag") or item.get("material_code") or item.get("imei_no") or "N/A",
-                        "action_type": f"變更狀態為-{new_status}",
+                        "action_type": f"變更狀態為-{new_status}({new_wh})",
                         "previous_holder": item.get("holder_name"),
                         "new_holder": new_holder,
                         "operator": operator,
-                        "remark": f"[工號: {new_user_id}] {transfer_remark}"
+                        "remark": f"[庫別: {new_wh} | 工號: {new_user_id}] {transfer_remark}"
                     }).execute()
                     
-                    st.success("✅ 狀態與使用人已同步更新至 Supabase！")
+                    st.success("✅ 狀態與庫別已同步更新至 Supabase！")
         else:
             st.error("查無此編號/IMEI/PCB/物料代碼，請重新確認。")
 
 # ========================================================
-# 6. 批次匯入 (包含：範本下載 + 欄位說明 + 安全分批寫入)
+# 6. 批次匯入 (支援庫別辨識)
 # ========================================================
 elif menu == "📥 批次匯入 (Excel/CSV)":
     st.header("📥 資產資料批次匯入")
-    st.write("直接上傳公司現有的 Excel (`.xlsx`) 或 CSV 檔案，系統會自動去除多餘空格並辨識欄位。")
+    st.write("直接上傳公司現有的 Excel (`.xlsx`) 或 CSV 檔案，支援「個人倉」與「部門倉」自動辨識。")
     
-    # 範本下載區塊
     with st.expander("📄 點此下載標準匯入範本 (CSV) 與查看支援欄位說明", expanded=True):
-        st.write("系統支援以下欄位（未填寫的欄位會自動以預設值或留空匯入）：")
-        
-        # 建立豐富的四類範本示範資料
         sample_df = pd.DataFrame([
             {
                 "資產主類型": "固定資產",
+                "庫別": "個人倉",
                 "資產編號": "FA-2026-001",
                 "物料描述": "Dell 27吋 4K 螢幕",
                 "分類": "螢幕設備",
@@ -620,51 +643,20 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
             },
             {
                 "資產主類型": "低值品",
+                "庫別": "部門倉",
                 "資產編號": "888220-1",
                 "物料描述": "SAMSUNG 970 EVO Plus 1TB SSD",
                 "分類": "硬碟",
                 "物料代碼": "",
                 "PCB": "",
                 "IMEI": "",
-                "使用人": "李大華",
-                "使用人工號": "EMP0456",
-                "狀態": "使用中",
-                "地理位置": "台北辦公室",
-                "詳細地點": "IT測試機房",
-                "數量": 1,
-                "備註": "桌機升級用"
-            },
-            {
-                "資產主類型": "手機 (樣機/外購機)",
-                "資產編號": "",
-                "物料描述": "Pixel 8 測試樣機",
-                "分類": "測試手機",
-                "物料代碼": "MAT-PH-001",
-                "PCB": "PCB-987654",
-                "IMEI": "358912345678901",
-                "使用人": "陳研發",
-                "使用人工號": "EMP0789",
-                "狀態": "使用中",
-                "地理位置": "台北辦公室",
-                "詳細地點": "實驗室樣品櫃",
-                "數量": 1,
-                "備註": "天線測試機"
-            },
-            {
-                "資產主類型": "物料",
-                "資產編號": "",
-                "物料描述": "Type-C 傳輸編織線 1m",
-                "分類": "耗材",
-                "物料代碼": "CABLE-TC-01",
-                "PCB": "",
-                "IMEI": "",
-                "使用人": "",
+                "使用人": "IT部門公用",
                 "使用人工號": "",
                 "狀態": "閒置",
                 "地理位置": "台北辦公室",
-                "詳細地點": "文具庫存櫃",
-                "數量": 50,
-                "備註": "新品入庫"
+                "詳細地點": "IT測試機房備料架",
+                "數量": 1,
+                "備註": "桌機升級用備料"
             }
         ])
         
@@ -687,23 +679,22 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
             else:
                 df_up = pd.read_excel(uploaded_file)
                 
-            # 去除表頭所有前後空格
             df_up.columns = [str(c).strip() for c in df_up.columns]
             
             st.subheader("預覽即將匯入的資料（前 5 筆）：")
             st.dataframe(df_up.head(), use_container_width=True)
             
-            # 超級表頭別名映射表
             col_map = {
                 "資產主類型": "asset_type", "資產類型": "asset_type", "類型": "asset_type",
-                "資產編號": "asset_tag", "設備編號": "asset_tag", "編號": "asset_tag", "asset_tag": "asset_tag", "Asset Tag": "asset_tag",
+                "庫別": "warehouse_type", "倉庫": "warehouse_type", "倉別": "warehouse_type",
+                "資產編號": "asset_tag", "設備編號": "asset_tag", "編號": "asset_tag", "asset_tag": "asset_tag",
                 "物料描述": "material_desc", "資物料描述": "material_desc", "設備名稱": "material_desc", "品名": "material_desc", "規格": "material_desc", "名稱": "material_desc",
                 "物料代碼": "material_code", "料號": "material_code",
                 "分類": "category", "類別": "category", "設備分類": "category",
                 "PCB": "pcb_no", "PCB號碼": "pcb_no", "PCB NO": "pcb_no",
                 "IMEI": "imei_no", "IMEI號碼": "imei_no", "IMEI／PCB": "pcb_no", "IMEI/PCB": "pcb_no",
                 "使用人": "holder_name", "保管人": "holder_name", "借用人": "holder_name", "姓名": "holder_name",
-                "使用人工號": "user_id_code", "工號": "user_id_code", "員工編號": "user_id_code", "員編": "user_id_code", "使用者工號": "user_id_code",
+                "使用人工號": "user_id_code", "工號": "user_id_code", "員工編號": "user_id_code", "員編": "user_id_code",
                 "狀態": "status",
                 "地理位置": "geo_location", "位置": "location", "存放地點": "geo_location",
                 "詳細地點": "detailed_location", "詳細位置": "detailed_location",
@@ -711,9 +702,14 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                 "備註": "notes", "備註說明": "notes"
             }
             
-            target_asset_type = st.selectbox(
-                "若上傳檔案內無「資產主類型」欄位，這批資料預設歸類為：",
+            c_in_type, c_in_wh = st.columns(2)
+            target_asset_type = c_in_type.selectbox(
+                "若上傳檔案內無「資產主類型」欄位，預設歸類為：",
                 ["低值品", "固定資產", "手機 (樣機/外購機)", "物料"]
+            )
+            target_wh_type = c_in_wh.selectbox(
+                "若上傳檔案內無「庫別」欄位，預設歸類為：",
+                ["個人倉", "部門倉"]
             )
             
             if st.button("🚀 確認將資料整批匯入 Supabase", type="primary"):
@@ -743,6 +739,12 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                     else:
                         rec["asset_type"] = target_asset_type
                         
+                    wh_val = row.get("warehouse_type")
+                    if pd.notna(wh_val) and str(wh_val).strip() and str(wh_val).strip().lower() != "nan":
+                        rec["warehouse_type"] = str(wh_val).strip()
+                    else:
+                        rec["warehouse_type"] = target_wh_type
+                        
                     rec["quantity"] = int(row.get("quantity")) if pd.notna(row.get("quantity")) and str(row.get("quantity")).isdigit() else 1
                     
                     tag_v = row.get("asset_tag")
@@ -756,7 +758,6 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                         rec["location"] = rec.get("geo_location") or "台北辦公室"
                     records.append(rec)
                 
-                # 分批寫入 (每批 50 筆，避免大量資料超時)
                 batch_size = 50
                 progress_bar = st.progress(0)
                 for i in range(0, len(records), batch_size):
@@ -764,7 +765,7 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                     supabase.table("assets").insert(chunk).execute()
                     progress_bar.progress(min((i + batch_size) / len(records), 1.0))
                 
-                st.success(f"🎉 成功匯入 {len(records)} 筆資料至資料庫！請切換至左側選單查看。")
+                st.success(f"🎉 成功匯入 {len(records)} 筆資料至資料庫！")
                 
         except Exception as e:
             st.error(f"匯入錯誤：{str(e)}")
@@ -786,11 +787,15 @@ elif menu == "📊 統計看板":
         c5.metric("待報廢", len(df[df["status"] == "待報廢"]))
         
         st.divider()
-        g1, g2 = st.columns(2)
+        g1, g2, g3 = st.columns(3)
         with g1:
             st.subheader("各大業務分類數量")
             st.bar_chart(df["asset_type"].fillna("未分類").value_counts())
         with g2:
+            st.subheader("個人倉 vs 部門倉")
+            if "warehouse_type" in df.columns:
+                st.bar_chart(df["warehouse_type"].fillna("個人倉").value_counts())
+        with g3:
             st.subheader("整體狀態分佈")
             st.bar_chart(df["status"].value_counts())
     else:
