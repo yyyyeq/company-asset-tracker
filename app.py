@@ -67,12 +67,11 @@ def fetch_and_filter_data(asset_type_list, status_filter, keyword):
         
     return df
 
-# 格式化表格 (替換 None 為空字串，避免滿版 None)
+# 格式化表格
 def clean_display_df(df, col_map):
     for k in col_map.keys():
         if k not in df.columns:
             df[k] = ""
-    # 保留 id 供勾選刪除使用
     cols_to_extract = ["id"] + list(col_map.keys())
     sub_df = df[cols_to_extract].copy()
     sub_df = sub_df.rename(columns=col_map)
@@ -82,7 +81,7 @@ def clean_display_df(df, col_map):
     return sub_df
 
 # ========================================================
-# 1. 固定資產 (支援：勾選一鍵批次刪除 + 輸入編號刪除 + 快速新增)
+# 1. 固定資產 (含：一鍵全選 + 批量刪除 + 編號刪除 + 快速新增)
 # ========================================================
 if menu == "💼 固定資產":
     st.header("💼 固定資產清單")
@@ -104,37 +103,37 @@ if menu == "💼 固定資產":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["geo_location"] = df["geo_location"].fillna(df.get("location", ""))
-        
         display_df = clean_display_df(df, col_map)
         
-        # 加上勾選欄位
-        display_df.insert(0, "選取", False)
+        # 關鍵：全選核取方塊
+        c_sel_all, c_info = st.columns([1, 4])
+        select_all_fa = c_sel_all.checkbox("🔘 全選所有資料", key="select_all_fa")
+        c_info.caption(f"目前共 {len(display_df)} 筆固定資產")
         
-        st.caption(f"共 {len(display_df)} 筆固定資產（勾選前方方塊可一鍵批量刪除）")
+        display_df.insert(0, "選取", select_all_fa)
         
-        # 使用 data_editor 呈現可勾選表格
         edited_df = st.data_editor(
             display_df,
             hide_index=True,
             use_container_width=True,
             height=600,
+            key="editor_fa",
             column_config={
-                "id": None, # 隱藏底層 UUID
+                "id": None,
                 "選取": st.column_config.CheckboxColumn(
                     "選取",
                     help="勾選欲批次刪除的項目",
-                    default=False,
+                    default=select_all_fa,
                 )
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
         
-        # 批次刪除按鈕
         selected_rows = edited_df[edited_df["選取"] == True]
-        c_del_batch, c_export = st.columns([1, 4])
+        c_del_batch, c_export = st.columns([1.5, 3.5])
         with c_del_batch:
             if not selected_rows.empty:
-                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary"):
+                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_fa"):
                     ids_to_del = selected_rows["id"].tolist()
                     supabase.table("assets").delete().in_("id", ids_to_del).execute()
                     st.success(f"已成功刪除 {len(ids_to_del)} 筆固定資產！")
@@ -148,7 +147,6 @@ if menu == "💼 固定資產":
     st.divider()
     c_add, c_del_quick = st.columns(2)
 
-    # --- 快速新增 ---
     with c_add.expander("➕ 快速新增固定資產", expanded=False):
         with st.form("add_fa_form"):
             fa_tag = st.text_input("資產編號 (必填)")
@@ -186,11 +184,10 @@ if menu == "💼 固定資產":
                     except Exception as e:
                         st.error(f"新增失敗：{str(e)}")
 
-    # --- 輸入編號直接刪除 ---
     with c_del_quick.expander("🗑️ 輸入資產編號直接刪除", expanded=False):
         with st.form("del_by_code_fa"):
             del_tag_input = st.text_input("請輸入欲刪除的「資產編號」")
-            confirm_check = st.checkbox("⚠️ 我確定要刪除這筆資產 (刪除後無法復原)")
+            confirm_check = st.checkbox("⚠️ 我確定要刪除這筆資產")
             btn_del_code = st.form_submit_button("立即刪除")
             if btn_del_code:
                 if not del_tag_input.strip():
@@ -203,10 +200,10 @@ if menu == "💼 固定資產":
                         st.success(f"🗑️ 已成功刪除資產編號：{del_tag_input.strip()}")
                         st.rerun()
                     else:
-                        st.error("查無此資產編號，請重新確認！")
+                        st.error("查無此資產編號！")
 
 # ========================================================
-# 2. 低值品 (支援：勾選一鍵批次刪除 + 輸入編號/描述刪除 + 快速新增)
+# 2. 低值品 (含：一鍵全選 + 批量刪除 + 編號刪除 + 快速新增)
 # ========================================================
 elif menu == "📦 低值品":
     st.header("📦 低值品清單")
@@ -227,33 +224,37 @@ elif menu == "📦 低值品":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["location"] = df["location"].fillna(df.get("geo_location", ""))
-        
         display_df = clean_display_df(df, col_map)
-        display_df.insert(0, "選取", False)
         
-        st.caption(f"共 {len(display_df)} 筆低值品（勾選前方方塊可一鍵批量刪除）")
+        # 關鍵：全選核取方塊
+        c_sel_all, c_info = st.columns([1, 4])
+        select_all_lv = c_sel_all.checkbox("🔘 全選所有資料", key="select_all_lv")
+        c_info.caption(f"目前共 {len(display_df)} 筆低值品")
+        
+        display_df.insert(0, "選取", select_all_lv)
         
         edited_df = st.data_editor(
             display_df,
             hide_index=True,
             use_container_width=True,
             height=600,
+            key="editor_lv",
             column_config={
                 "id": None,
                 "選取": st.column_config.CheckboxColumn(
                     "選取",
                     help="勾選欲批次刪除的項目",
-                    default=False,
+                    default=select_all_lv,
                 )
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
         
         selected_rows = edited_df[edited_df["選取"] == True]
-        c_del_batch, c_export = st.columns([1, 4])
+        c_del_batch, c_export = st.columns([1.5, 3.5])
         with c_del_batch:
             if not selected_rows.empty:
-                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary"):
+                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_lv"):
                     ids_to_del = selected_rows["id"].tolist()
                     supabase.table("assets").delete().in_("id", ids_to_del).execute()
                     st.success(f"已成功刪除 {len(ids_to_del)} 筆低值品！")
@@ -271,7 +272,7 @@ elif menu == "📦 低值品":
         with st.form("add_low_val_form"):
             lv_tag = st.text_input("資產編號 (無可留空)")
             lv_desc = st.text_input("資物料描述 (必填，如: 羅技無線滑鼠)")
-            lv_cat = st.text_input("分類", value="周邊耗材")
+            lv_cat = st.text_input("分類", value="硬碟/記憶體/周邊")
             lv_holder = st.text_input("使用人")
             lv_uid = st.text_input("使用人工號")
             lv_loc = st.text_input("位置", value="台北辦公室")
@@ -302,10 +303,10 @@ elif menu == "📦 低值品":
                     except Exception as e:
                         st.error(f"新增失敗：{str(e)}")
 
-    with c_del_quick.expander("🗑️ 輸入編號直接刪除", expanded=False):
+    with c_del_quick.expander("🗑️ 輸入編號/描述直接刪除", expanded=False):
         with st.form("del_by_code_lv"):
             del_input = st.text_input("輸入欲刪除的「資產編號」或「物料描述」")
-            confirm_check = st.checkbox("⚠️ 我確定要刪除 (刪除後無法復原)")
+            confirm_check = st.checkbox("⚠️ 我確定要刪除")
             btn_del_lv = st.form_submit_button("立即刪除")
             if btn_del_lv:
                 if not del_input.strip():
@@ -319,10 +320,10 @@ elif menu == "📦 低值品":
                         st.success(f"🗑️ 已成功刪除 {len(res.data)} 筆符合資料！")
                         st.rerun()
                     else:
-                        st.error("查無符合資料，請確認編號或描述！")
+                        st.error("查無符合資料！")
 
 # ========================================================
-# 3. 手機 (樣機/外購機) (支援：勾選一鍵批次刪除 + 輸入IMEI/PCB刪除 + 快速新增)
+# 3. 手機 (樣機/外購機) (含：一鍵全選 + 批量刪除 + IMEI刪除 + 快速新增)
 # ========================================================
 elif menu == "📱 手機 (樣機/外購機)":
     st.header("📱 手機 (樣機 / 外購機 / 測試機) 清單")
@@ -342,33 +343,37 @@ elif menu == "📱 手機 (樣機/外購機)":
             "notes": "備註"
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
-        
         display_df = clean_display_df(df, col_map)
-        display_df.insert(0, "選取", False)
         
-        st.caption(f"共 {len(display_df)} 筆手機設備（勾選前方方塊可一鍵批量刪除）")
+        # 關鍵：全選核取方塊
+        c_sel_all, c_info = st.columns([1, 4])
+        select_all_ph = c_sel_all.checkbox("🔘 全選所有資料", key="select_all_ph")
+        c_info.caption(f"目前共 {len(display_df)} 筆手機設備")
+        
+        display_df.insert(0, "選取", select_all_ph)
         
         edited_df = st.data_editor(
             display_df,
             hide_index=True,
             use_container_width=True,
             height=600,
+            key="editor_ph",
             column_config={
                 "id": None,
                 "選取": st.column_config.CheckboxColumn(
                     "選取",
                     help="勾選欲批次刪除的項目",
-                    default=False,
+                    default=select_all_ph,
                 )
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
         
         selected_rows = edited_df[edited_df["選取"] == True]
-        c_del_batch, c_export = st.columns([1, 4])
+        c_del_batch, c_export = st.columns([1.5, 3.5])
         with c_del_batch:
             if not selected_rows.empty:
-                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary"):
+                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_ph"):
                     ids_to_del = selected_rows["id"].tolist()
                     supabase.table("assets").delete().in_("id", ids_to_del).execute()
                     st.success(f"已成功刪除 {len(ids_to_del)} 筆手機資料！")
@@ -423,7 +428,7 @@ elif menu == "📱 手機 (樣機/外購機)":
     with c_del_quick.expander("🗑️ 輸入 IMEI / PCB / 代碼直接刪除", expanded=False):
         with st.form("del_by_code_phone"):
             del_p_input = st.text_input("輸入欲刪除的「IMEI」或「PCB 號碼」或「物料代碼」")
-            confirm_check = st.checkbox("⚠️ 我確定要刪除這筆手機資料 (刪除後無法復原)")
+            confirm_check = st.checkbox("⚠️ 我確定要刪除")
             btn_del_phone = st.form_submit_button("立即刪除")
             if btn_del_phone:
                 if not del_p_input.strip():
@@ -437,10 +442,10 @@ elif menu == "📱 手機 (樣機/外購機)":
                         st.success(f"🗑️ 已成功刪除 {len(res.data)} 筆手機資料！")
                         st.rerun()
                     else:
-                        st.error("查無符合資料，請確認號碼！")
+                        st.error("查無符合資料！")
 
 # ========================================================
-# 4. 物料管理 (支援：勾選一鍵批次刪除)
+# 4. 物料管理 (含：一鍵全選 + 批量刪除)
 # ========================================================
 elif menu == "🔩 物料管理":
     st.header("🔩 物料清單")
@@ -461,33 +466,37 @@ elif menu == "🔩 物料管理":
         }
         df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["pcb_no"] = df["pcb_no"].fillna(df.get("imei_no", ""))
-        
         display_df = clean_display_df(df, col_map)
-        display_df.insert(0, "選取", False)
         
-        st.caption(f"共 {len(display_df)} 筆物料項目（勾選前方方塊可一鍵批量刪除）")
+        # 關鍵：全選核取方塊
+        c_sel_all, c_info = st.columns([1, 4])
+        select_all_mat = c_sel_all.checkbox("🔘 全選所有資料", key="select_all_mat")
+        c_info.caption(f"目前共 {len(display_df)} 筆物料項目")
+        
+        display_df.insert(0, "選取", select_all_mat)
         
         edited_df = st.data_editor(
             display_df,
             hide_index=True,
             use_container_width=True,
             height=600,
+            key="editor_mat",
             column_config={
                 "id": None,
                 "選取": st.column_config.CheckboxColumn(
                     "選取",
                     help="勾選欲批次刪除的項目",
-                    default=False,
+                    default=select_all_mat,
                 )
             },
             disabled=[c for c in display_df.columns if c != "選取"]
         )
         
         selected_rows = edited_df[edited_df["選取"] == True]
-        c_del_batch, c_export = st.columns([1, 4])
+        c_del_batch, c_export = st.columns([1.5, 3.5])
         with c_del_batch:
             if not selected_rows.empty:
-                if st.button(f"🗑️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary"):
+                if st.button(f"🗑️️ 一鍵刪除勾選項目 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_mat"):
                     ids_to_del = selected_rows["id"].tolist()
                     supabase.table("assets").delete().in_("id", ids_to_del).execute()
                     st.success(f"已成功刪除 {len(ids_to_del)} 筆物料！")
