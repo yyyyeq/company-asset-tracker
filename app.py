@@ -4,7 +4,7 @@ from datetime import datetime
 from supabase import create_client, Client
 
 st.set_page_config(
-    page_title="企業資產管理大資料庫",
+    page_title="資產管理資料庫",
     page_icon="🏢",
     layout="wide"
 )
@@ -35,7 +35,7 @@ def safe_batch_delete(supabase_client, id_list, chunk_size=20):
         supabase_client.table("assets").delete().in_("id", chunk).execute()
 
 # 左側邊欄選單分頁
-st.sidebar.title("🏢 資產大資料庫")
+st.sidebar.title("🏢 資產資料庫")
 menu = st.sidebar.radio(
     "業務分類選單",
     [
