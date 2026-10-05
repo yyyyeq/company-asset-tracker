@@ -57,7 +57,6 @@ def get_employee_directory():
         return pd.DataFrame(columns=["同仁姓名", "工號", "持有設備總數"])
     
     df_emp = pd.DataFrame(data)
-    # 過濾空名字
     df_emp = df_emp[df_emp["holder_name"].notna() & (df_emp["holder_name"].str.strip() != "") & (df_emp["holder_name"] != "None")]
     if df_emp.empty:
         return pd.DataFrame(columns=["同仁姓名", "工號", "持有設備總數"])
@@ -65,20 +64,19 @@ def get_employee_directory():
     df_emp["holder_name"] = df_emp["holder_name"].astype(str).str.strip()
     df_emp["user_id_code"] = df_emp["user_id_code"].fillna("").astype(str).str.strip().replace({"None": "", "nan": ""})
     
-    # 統計每人持有筆數並去重
     summary = df_emp.groupby(["holder_name", "user_id_code"]).size().reset_index(name="持有設備總數")
     summary = summary.rename(columns={"holder_name": "同仁姓名", "user_id_code": "工號"})
-    summary = summary.sort_values(by="同仁姓名").reset_index(drop=True)
     return summary
 
-# 通用過濾與搜尋小工具函式 (含：A 方案 人員工號收合速查表)
+# 通用過濾與搜尋小工具函式 (含：依順序排列的工號對照表)
 def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
-    # 做法 A：收合式人員與工號對照小工具
     with st.expander("👥 點此展開【同仁姓名與工號速查表】", expanded=False):
         emp_df = get_employee_directory()
         if not emp_df.empty:
-            q_col, count_col = st.columns([2, 1])
-            emp_search = q_col.text_input("🔍 速查同仁名單（輸入姓名或工號關鍵字）", key=f"emp_search_{menu_name}")
+            q_col, sort_col, order_col = st.columns([2, 1, 1])
+            emp_search = q_col.text_input("🔍 關鍵字過濾", key=f"emp_search_{menu_name}", placeholder="輸入姓名或工號...")
+            sort_by = sort_col.selectbox("排序依據", ["工號", "同仁姓名", "持有設備總數"], key=f"emp_sort_{menu_name}")
+            sort_order = order_col.selectbox("順序", ["由小到大 (遞增)", "由大到小 (遞減)"], key=f"emp_order_{menu_name}")
             
             filtered_emp = emp_df.copy()
             if emp_search:
@@ -87,10 +85,15 @@ def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
                     filtered_emp["同仁姓名"].str.lower().str.contains(s) | 
                     filtered_emp["工號"].str.lower().str.contains(s)
                 ]
-            count_col.caption(f"共符合 {len(filtered_emp)} 位同仁")
-            st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=180)
+            
+            # 執行排序
+            is_ascending = (sort_order == "由小到大 (遞增)")
+            filtered_emp = filtered_emp.sort_values(by=sort_by, ascending=is_ascending).reset_index(drop=True)
+            
+            st.caption(f"共 {len(filtered_emp)} 位同仁（目前依【{sort_by}】{sort_order} 排列）")
+            st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=200)
         else:
-            st.caption("目前資料庫中尚無同仁姓名資料，匯入或建檔後將自動彙整。")
+            st.caption("目前資料庫中尚無同仁姓名資料。")
 
     # 主搜尋列
     c1, c2, c3 = st.columns([1, 1, 2])
@@ -377,7 +380,7 @@ elif menu == "📦 低值品":
     with c_del_quick.expander("🗑️ 輸入編號/描述直接刪除", expanded=False):
         with st.form("del_by_code_lv"):
             del_input = st.text_input("輸入欲刪除的「資產編號」或「物料描述」")
-            confirm_check = st.checkbox("⚠️️ 我確定要刪除")
+            confirm_check = st.checkbox("⚠️ 我確定要刪除")
             btn_del_lv = st.form_submit_button("立即刪除")
             if btn_del_lv:
                 if not del_input.strip():
@@ -508,7 +511,7 @@ elif menu == "📱 手機 (樣機/外購機)":
     with c_del_quick.expander("🗑️ 輸入 IMEI / PCB / 代碼直接刪除", expanded=False):
         with st.form("del_by_code_phone"):
             del_p_input = st.text_input("輸入欲刪除的「IMEI」或「PCB 號碼」或「物料代碼」")
-            confirm_check = st.checkbox("⚠️️ 我確定要刪除")
+            confirm_check = st.checkbox("⚠️ 我確定要刪除")
             btn_del_phone = st.form_submit_button("立即刪除")
             if btn_del_phone:
                 if not del_p_input.strip():
@@ -519,7 +522,7 @@ elif menu == "📱 手機 (樣機/外購機)":
                     target = del_p_input.strip()
                     res = supabase.table("assets").delete().or_(f"imei_no.eq.{target},pcb_no.eq.{target},material_code.eq.{target}").execute()
                     if res.data:
-                        st.success(f"🗑️ 已成功刪除 {len(res.data)} 筆手機資料！")
+                        st.success(f"🗑️️ 已成功刪除 {len(res.data)} 筆手機資料！")
                         st.rerun()
                     else:
                         st.error("查無符合資料！")
@@ -577,7 +580,7 @@ elif menu == "🔩 物料管理":
         c_del_batch, c_clear_all, c_export = st.columns([1.5, 1.5, 2])
         with c_del_batch:
             if not selected_rows.empty:
-                if st.button(f"🗑️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_mat"):
+                if st.button(f"🗑️️ 刪除勾選項 ({len(selected_rows)} 筆)", type="primary", key="btn_del_batch_mat"):
                     ids_to_del = selected_rows["id"].tolist()
                     safe_batch_delete(supabase, ids_to_del)
                     st.success(f"已成功刪除 {len(ids_to_del)} 筆物料！")
