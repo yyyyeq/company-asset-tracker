@@ -26,7 +26,7 @@ except Exception as e:
 STATUS_OPTIONS = ["全部", "使用中", "轉移中", "閒置", "備用", "待報廢"]
 RAW_STATUS_OPTIONS = ["使用中", "轉移中", "閒置", "備用", "待報廢"]
 
-# 安全分批刪除函式 (避免網址過長噴 APIError)
+# 安全分批刪除函式
 def safe_batch_delete(supabase_client, id_list, chunk_size=20):
     for i in range(0, len(id_list), chunk_size):
         chunk = id_list[i:i + chunk_size]
@@ -197,7 +197,7 @@ if menu == "💼 固定資產":
     with c_del_quick.expander("🗑️ 輸入資產編號直接刪除", expanded=False):
         with st.form("del_by_code_fa"):
             del_tag_input = st.text_input("請輸入欲刪除的「資產編號」")
-            confirm_check = st.checkbox("⚠️️ 我確定要刪除這筆資產")
+            confirm_check = st.checkbox("⚠️ 我確定要刪除這筆資產")
             btn_del_code = st.form_submit_button("立即刪除")
             if btn_del_code:
                 if not del_tag_input.strip():
@@ -590,13 +590,95 @@ elif menu == "🔄 狀態異動與轉移":
             st.error("查無此編號/IMEI/PCB/物料代碼，請重新確認。")
 
 # ========================================================
-# 6. 批次匯入
+# 6. 批次匯入 (包含：範本下載 + 欄位說明 + 安全分批寫入)
 # ========================================================
 elif menu == "📥 批次匯入 (Excel/CSV)":
-    st.header("資產資料批次匯入")
-    st.write("直接上傳既有的 Excel 或 CSV 表格，系統會自動去除多餘空格並辨識欄位。")
+    st.header("📥 資產資料批次匯入")
+    st.write("直接上傳公司現有的 Excel (`.xlsx`) 或 CSV 檔案，系統會自動去除多餘空格並辨識欄位。")
     
-    uploaded_file = st.file_uploader("上傳 Excel 或 CSV 檔案", type=["csv", "xlsx"])
+    # 範本下載區塊
+    with st.expander("📄 點此下載標準匯入範本 (CSV) 與查看支援欄位說明", expanded=True):
+        st.write("系統支援以下欄位（未填寫的欄位會自動以預設值或留空匯入）：")
+        
+        # 建立豐富的四類範本示範資料
+        sample_df = pd.DataFrame([
+            {
+                "資產主類型": "固定資產",
+                "資產編號": "FA-2026-001",
+                "物料描述": "Dell 27吋 4K 螢幕",
+                "分類": "螢幕設備",
+                "物料代碼": "",
+                "PCB": "",
+                "IMEI": "",
+                "使用人": "王小明",
+                "使用人工號": "EMP0123",
+                "狀態": "使用中",
+                "地理位置": "台北辦公室",
+                "詳細地點": "7F 開放辦公區-桌號12",
+                "數量": 1,
+                "備註": "雙螢幕配置之一"
+            },
+            {
+                "資產主類型": "低值品",
+                "資產編號": "888220-1",
+                "物料描述": "SAMSUNG 970 EVO Plus 1TB SSD",
+                "分類": "硬碟",
+                "物料代碼": "",
+                "PCB": "",
+                "IMEI": "",
+                "使用人": "李大華",
+                "使用人工號": "EMP0456",
+                "狀態": "使用中",
+                "地理位置": "台北辦公室",
+                "詳細地點": "IT測試機房",
+                "數量": 1,
+                "備註": "桌機升級用"
+            },
+            {
+                "資產主類型": "手機 (樣機/外購機)",
+                "資產編號": "",
+                "物料描述": "Pixel 8 測試樣機",
+                "分類": "測試手機",
+                "物料代碼": "MAT-PH-001",
+                "PCB": "PCB-987654",
+                "IMEI": "358912345678901",
+                "使用人": "陳研發",
+                "使用人工號": "EMP0789",
+                "狀態": "使用中",
+                "地理位置": "台北辦公室",
+                "詳細地點": "實驗室樣品櫃",
+                "數量": 1,
+                "備註": "天線測試機"
+            },
+            {
+                "資產主類型": "物料",
+                "資產編號": "",
+                "物料描述": "Type-C 傳輸編織線 1m",
+                "分類": "耗材",
+                "物料代碼": "CABLE-TC-01",
+                "PCB": "",
+                "IMEI": "",
+                "使用人": "",
+                "使用人工號": "",
+                "狀態": "閒置",
+                "地理位置": "台北辦公室",
+                "詳細地點": "文具庫存櫃",
+                "數量": 50,
+                "備註": "新品入庫"
+            }
+        ])
+        
+        sample_csv = sample_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 點擊下載標準匯入範本 (CSV 格式)",
+            data=sample_csv,
+            file_name="企業資產統一標準匯入範本.csv",
+            mime="text/csv"
+        )
+        st.dataframe(sample_df, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    uploaded_file = st.file_uploader("請選擇要匯入的 Excel 或 CSV 檔案", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
         try:
@@ -605,34 +687,36 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
             else:
                 df_up = pd.read_excel(uploaded_file)
                 
+            # 去除表頭所有前後空格
             df_up.columns = [str(c).strip() for c in df_up.columns]
             
-            st.write("預覽匯入資料（前 5 筆）：")
+            st.subheader("預覽即將匯入的資料（前 5 筆）：")
             st.dataframe(df_up.head(), use_container_width=True)
             
+            # 超級表頭別名映射表
             col_map = {
                 "資產主類型": "asset_type", "資產類型": "asset_type", "類型": "asset_type",
-                "資產編號": "asset_tag", "設備編號": "asset_tag", "編號": "asset_tag", "asset_tag": "asset_tag",
-                "物料描述": "material_desc", "資物料描述": "material_desc", "設備名稱": "material_desc", "品名": "material_desc", "規格": "material_desc",
+                "資產編號": "asset_tag", "設備編號": "asset_tag", "編號": "asset_tag", "asset_tag": "asset_tag", "Asset Tag": "asset_tag",
+                "物料描述": "material_desc", "資物料描述": "material_desc", "設備名稱": "material_desc", "品名": "material_desc", "規格": "material_desc", "名稱": "material_desc",
                 "物料代碼": "material_code", "料號": "material_code",
-                "分類": "category", "類別": "category",
+                "分類": "category", "類別": "category", "設備分類": "category",
                 "PCB": "pcb_no", "PCB號碼": "pcb_no", "PCB NO": "pcb_no",
                 "IMEI": "imei_no", "IMEI號碼": "imei_no", "IMEI／PCB": "pcb_no", "IMEI/PCB": "pcb_no",
                 "使用人": "holder_name", "保管人": "holder_name", "借用人": "holder_name", "姓名": "holder_name",
-                "使用人工號": "user_id_code", "工號": "user_id_code", "員工編號": "user_id_code", "員編": "user_id_code",
+                "使用人工號": "user_id_code", "工號": "user_id_code", "員工編號": "user_id_code", "員編": "user_id_code", "使用者工號": "user_id_code",
                 "狀態": "status",
                 "地理位置": "geo_location", "位置": "location", "存放地點": "geo_location",
                 "詳細地點": "detailed_location", "詳細位置": "detailed_location",
                 "數量": "quantity",
-                "備註": "notes"
+                "備註": "notes", "備註說明": "notes"
             }
             
             target_asset_type = st.selectbox(
-                "若上傳表格未註明「資產主類型」，預設歸類為：",
+                "若上傳檔案內無「資產主類型」欄位，這批資料預設歸類為：",
                 ["低值品", "固定資產", "手機 (樣機/外購機)", "物料"]
             )
             
-            if st.button("🚀 確認將資料整批匯入 Supabase"):
+            if st.button("🚀 確認將資料整批匯入 Supabase", type="primary"):
                 df_up = df_up.rename(columns=col_map)
                 records = []
                 for _, row in df_up.iterrows():
@@ -652,7 +736,7 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                     atype = row.get("asset_type")
                     if pd.notna(atype) and str(atype).strip() and str(atype).strip().lower() != "nan":
                         atype_str = str(atype).strip()
-                        if atype_str in ["樣機", "外購機"]:
+                        if atype_str in ["樣機", "外購機", "手機"]:
                             rec["asset_type"] = "手機 (樣機/外購機)"
                         else:
                             rec["asset_type"] = atype_str
@@ -672,8 +756,15 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                         rec["location"] = rec.get("geo_location") or "台北辦公室"
                     records.append(rec)
                 
-                supabase.table("assets").insert(records).execute()
-                st.success(f"🎉 成功匯入 {len(records)} 筆資料至【{target_asset_type}】！")
+                # 分批寫入 (每批 50 筆，避免大量資料超時)
+                batch_size = 50
+                progress_bar = st.progress(0)
+                for i in range(0, len(records), batch_size):
+                    chunk = records[i:i + batch_size]
+                    supabase.table("assets").insert(chunk).execute()
+                    progress_bar.progress(min((i + batch_size) / len(records), 1.0))
+                
+                st.success(f"🎉 成功匯入 {len(records)} 筆資料至資料庫！請切換至左側選單查看。")
                 
         except Exception as e:
             st.error(f"匯入錯誤：{str(e)}")
