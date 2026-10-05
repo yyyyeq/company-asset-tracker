@@ -4,7 +4,7 @@ from datetime import datetime
 from supabase import create_client, Client
 
 st.set_page_config(
-    page_title="資產管理資料庫",
+    page_title="企業資產管理大資料庫",
     page_icon="🏢",
     layout="wide"
 )
@@ -27,7 +27,7 @@ STATUS_OPTIONS = ["全部", "使用中", "轉移中", "閒置", "備用", "待�
 RAW_STATUS_OPTIONS = ["使用中", "轉移中", "閒置", "備用", "待報廢"]
 
 # 左側邊欄選單分頁
-st.sidebar.title("🏢 資產資料庫")
+st.sidebar.title("🏢 資產大資料庫")
 menu = st.sidebar.radio(
     "業務分類選單",
     [
@@ -68,9 +68,17 @@ def fetch_and_filter_data(asset_type_list, status_filter, keyword):
         
     return df
 
+# 格式化表格 (替換 None 為空字串，避免滿版 None)
+def clean_display_df(df, col_map):
+    for k in col_map.keys():
+        if k not in df.columns:
+            df[k] = ""
+    sub_df = df[list(col_map.keys())].rename(columns=col_map)
+    # 將 None, nan 轉成乾淨的空字串
+    return sub_df.fillna("").astype(str).replace({"None": "", "nan": ""})
+
 # ========================================================
 # 1. 固定資產
-# 欄位：資產編號、物料描述、分類、使用人、工號、地理位置、詳細地點、狀態、備註
 # ========================================================
 if menu == "💼 固定資產":
     st.header("💼 固定資產清單")
@@ -90,17 +98,13 @@ if menu == "💼 固定資產":
             "status": "狀態",
             "notes": "備註"
         }
-        for k in col_map.keys():
-            if k not in df.columns:
-                df[k] = None
-                
-        # 兼容 material_desc 為空時用 name 補
-        df["material_desc"] = df["material_desc"].fillna(df["name"])
-        df["geo_location"] = df["geo_location"].fillna(df["location"])
+        df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
+        df["geo_location"] = df["geo_location"].fillna(df.get("location", ""))
         
-        display_df = df[list(col_map.keys())].rename(columns=col_map)
+        display_df = clean_display_df(df, col_map)
         st.caption(f"共 {len(display_df)} 筆固定資產")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        # height=800 大幅拉長表格顯示高度
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=800)
         
         csv = display_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 匯出固定資產清單 (CSV)", csv, "固定資產清單.csv", "text/csv")
@@ -109,7 +113,6 @@ if menu == "💼 固定資產":
 
 # ========================================================
 # 2. 低值品
-# 欄位：資產編號、資物料描述、分類、使用人、工號、狀態、位置、備註
 # ========================================================
 elif menu == "📦 低值品":
     st.header("📦 低值品清單")
@@ -128,16 +131,12 @@ elif menu == "📦 低值品":
             "location": "位置",
             "notes": "備註"
         }
-        for k in col_map.keys():
-            if k not in df.columns:
-                df[k] = None
-                
-        df["material_desc"] = df["material_desc"].fillna(df["name"])
-        df["location"] = df["location"].fillna(df.get("geo_location", "台北辦公室"))
+        df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
+        df["location"] = df["location"].fillna(df.get("geo_location", ""))
         
-        display_df = df[list(col_map.keys())].rename(columns=col_map)
+        display_df = clean_display_df(df, col_map)
         st.caption(f"共 {len(display_df)} 筆低值品")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=800)
         
         csv = display_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 匯出低值品清單 (CSV)", csv, "低值品清單.csv", "text/csv")
@@ -146,7 +145,6 @@ elif menu == "📦 低值品":
 
 # ========================================================
 # 3. 手機 (樣機/外購機)
-# 欄位：PCB、物料描述、IMEI、物料代碼、使用人、工號、狀態、備註
 # ========================================================
 elif menu == "📱 手機 (樣機/外購機)":
     st.header("📱 手機 (樣機 / 外購機 / 測試機) 清單")
@@ -165,15 +163,11 @@ elif menu == "📱 手機 (樣機/外購機)":
             "status": "狀態",
             "notes": "備註"
         }
-        for k in col_map.keys():
-            if k not in df.columns:
-                df[k] = None
-                
-        df["material_desc"] = df["material_desc"].fillna(df["name"])
+        df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         
-        display_df = df[list(col_map.keys())].rename(columns=col_map)
+        display_df = clean_display_df(df, col_map)
         st.caption(f"共 {len(display_df)} 筆手機設備")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=800)
         
         csv = display_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 匯出手機清單 (CSV)", csv, "手機樣機清單.csv", "text/csv")
@@ -182,7 +176,6 @@ elif menu == "📱 手機 (樣機/外購機)":
 
 # ========================================================
 # 4. 物料管理
-# 欄位：物料代碼、IMEI／PCB、物料描述、使用人、工號、數量、狀態、備註
 # ========================================================
 elif menu == "🔩 物料管理":
     st.header("🔩 物料清單")
@@ -201,16 +194,12 @@ elif menu == "🔩 物料管理":
             "status": "狀態",
             "notes": "備註"
         }
-        for k in col_map.keys():
-            if k not in df.columns:
-                df[k] = None
-                
-        df["material_desc"] = df["material_desc"].fillna(df["name"])
+        df["material_desc"] = df["material_desc"].fillna(df.get("name", ""))
         df["pcb_no"] = df["pcb_no"].fillna(df.get("imei_no", ""))
         
-        display_df = df[list(col_map.keys())].rename(columns=col_map)
+        display_df = clean_display_df(df, col_map)
         st.caption(f"共 {len(display_df)} 筆物料項目")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=800)
         
         csv = display_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 匯出物料清單 (CSV)", csv, "物料清單.csv", "text/csv")
@@ -244,8 +233,8 @@ elif menu == "🔄 狀態異動與轉移":
                 new_user_id = col_u2.text_input("新使用人工號", value=item.get("user_id_code") or "")
                 
                 col_l1, col_l2 = st.columns(2)
-                new_geo = col_l1.text_input("地理位置 (如: 台北辦公室)", value=item.get("geo_location") or item.get("location") or "台北辦公室")
-                new_detail_loc = col_l2.text_input("詳細地點 (如: 機房櫃位/桌號)", value=item.get("detailed_location") or "")
+                new_geo = col_l1.text_input("地理位置", value=item.get("geo_location") or item.get("location") or "台北辦公室")
+                new_detail_loc = col_l2.text_input("詳細地點", value=item.get("detailed_location") or "")
                 
                 transfer_remark = st.text_area("本次異動備註 (如: 移交新進人員、外借測試、歸還庫存)")
                 operator = st.text_input("經辦人姓名", value="Admin")
@@ -361,48 +350,12 @@ elif menu == "➕ 單筆建檔":
                     st.error(f"新增失敗：{str(e)}")
 
 # ========================================================
-# 7. 批次匯入
+# 7. 批次匯入 (擴大表頭容錯，支援各類工號、資產編號別名)
 # ========================================================
 elif menu == "📥 批次匯入 (Excel/CSV)":
     st.header("資產資料批次匯入")
-    st.write("直接上傳既有的 Excel 或 CSV 表格，系統自動比對表頭並寫入。")
+    st.write("直接上傳既有的 Excel 或 CSV 表格，系統會自動去除多餘空格並辨識欄位。")
     
-    sample_data = pd.DataFrame([{
-        "資產主類型": "固定資產",
-        "資產編號": "FA-2026-001",
-        "物料描述": "Dell 27吋 4K 螢幕",
-        "物料代碼": "MAT-001",
-        "分類": "螢幕設備",
-        "PCB": "",
-        "IMEI": "",
-        "使用人": "王小明",
-        "使用人工號": "EMP0123",
-        "狀態": "使用中",
-        "地理位置": "台北辦公室",
-        "詳細地點": "7F 開放辦公區",
-        "數量": 1,
-        "備註": "雙螢幕配置之一"
-    }, {
-        "資產主類型": "低值品",
-        "資產編號": "",
-        "物料描述": "三星 970 EVO Plus 1TB",
-        "物料代碼": "",
-        "分類": "硬碟",
-        "PCB": "",
-        "IMEI": "",
-        "使用人": "李大華",
-        "使用人工號": "EMP0456",
-        "狀態": "使用中",
-        "地理位置": "台北辦公室",
-        "詳細地點": "桌機擴充",
-        "數量": 1,
-        "備註": "開發機使用"
-    }])
-    
-    sample_csv = sample_data.to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📄 下載標準匯入範本 (CSV)", sample_csv, "企業資產統一匯入範本.csv", "text/csv")
-    
-    st.divider()
     uploaded_file = st.file_uploader("上傳 Excel 或 CSV 檔案", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
@@ -412,34 +365,42 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
             else:
                 df_up = pd.read_excel(uploaded_file)
                 
+            # 去除表頭所有前後空格
+            df_up.columns = [str(c).strip() for c in df_up.columns]
+            
             st.write("預覽匯入資料（前 5 筆）：")
             st.dataframe(df_up.head(), use_container_width=True)
             
+            # 超級表頭別名映射表
             col_map = {
-                "資產主類型": "asset_type",
-                "資產類型": "asset_type",
-                "資產編號": "asset_tag",
-                "物料描述": "material_desc",
-                "資物料描述": "material_desc",
-                "設備名稱": "material_desc",
-                "物料代碼": "material_code",
-                "分類": "category",
-                "PCB": "pcb_no",
-                "PCB號碼": "pcb_no",
-                "IMEI": "imei_no",
-                "IMEI／PCB": "pcb_no",
-                "使用人": "holder_name",
-                "使用人工號": "user_id_code",
-                "狀態": "status",
-                "地理位置": "geo_location",
-                "位置": "geo_location",
-                "詳細地點": "detailed_location",
+                # 資產主類型
+                "資產主類型": "asset_type", "資產類型": "asset_type", "類型": "asset_type",
+                # 資產編號
+                "資產編號": "asset_tag", "設備編號": "asset_tag", "編號": "asset_tag", "asset_tag": "asset_tag", "Asset Tag": "asset_tag", "標籤編號": "asset_tag",
+                # 物料描述 / 規格名稱
+                "物料描述": "material_desc", "資物料描述": "material_desc", "設備名稱": "material_desc", "品名": "material_desc", "規格": "material_desc", "名稱": "material_desc",
+                # 物料代碼
+                "物料代碼": "material_code", "料號": "material_code",
+                # 分類
+                "分類": "category", "類別": "category", "設備分類": "category",
+                # PCB / IMEI
+                "PCB": "pcb_no", "PCB號碼": "pcb_no", "PCB NO": "pcb_no",
+                "IMEI": "imei_no", "IMEI號碼": "imei_no", "IMEI／PCB": "pcb_no", "IMEI/PCB": "pcb_no",
+                # 人員與工號 (關鍵擴充)
+                "使用人": "holder_name", "保管人": "holder_name", "借用人": "holder_name", "領用人": "holder_name", "姓名": "holder_name",
+                "使用人工號": "user_id_code", "工號": "user_id_code", "員工編號": "user_id_code", "員編": "user_id_code", "使用者工號": "user_id_code", "員工代號": "user_id_code",
+                # 狀態
+                "狀態": "status", "設備狀態": "status",
+                # 地點
+                "地理位置": "geo_location", "位置": "location", "存放地點": "geo_location",
+                "詳細地點": "detailed_location", "詳細位置": "detailed_location",
+                # 數量與備註
                 "數量": "quantity",
-                "備註": "notes"
+                "備註": "notes", "備註說明": "notes"
             }
             
             target_asset_type = st.selectbox(
-                "若上傳表格內未標明「資產主類型」，預設歸類為：",
+                "若上傳表格未註明「資產主類型」，預設歸類為：",
                 ["低值品", "固定資產", "手機 (樣機/外購機)", "物料"]
             )
             
@@ -474,18 +435,20 @@ elif menu == "📥 批次匯入 (Excel/CSV)":
                         
                     rec["quantity"] = int(row.get("quantity")) if pd.notna(row.get("quantity")) and str(row.get("quantity")).isdigit() else 1
                     
+                    # 處理資產編號
                     tag_v = row.get("asset_tag")
                     rec["asset_tag"] = str(tag_v).strip() if pd.notna(tag_v) and str(tag_v).strip().lower() != "nan" else None
                     
-                    for k in ["material_code", "category", "pcb_no", "imei_no", "holder_name", "user_id_code", "geo_location", "detailed_location", "notes"]:
+                    for k in ["material_code", "category", "pcb_no", "imei_no", "holder_name", "user_id_code", "geo_location", "detailed_location", "location", "notes"]:
                         val = row.get(k)
                         rec[k] = str(val).strip() if pd.notna(val) and str(val).strip().lower() != "nan" else None
                     
-                    rec["location"] = rec.get("geo_location") or "台北辦公室"
+                    if not rec.get("location"):
+                        rec["location"] = rec.get("geo_location") or "台北辦公室"
                     records.append(rec)
                 
                 supabase.table("assets").insert(records).execute()
-                st.success(f"🎉 成功匯入 {len(records)} 筆資料至【{target_asset_type}】！點選左側選單即可查看。")
+                st.success(f"🎉 成功匯入 {len(records)} 筆資料至【{target_asset_type}】！已解決工號與編號問題。")
                 
         except Exception as e:
             st.error(f"匯入錯誤：{str(e)}")
