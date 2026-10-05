@@ -4,7 +4,7 @@ from datetime import datetime
 from supabase import create_client, Client
 
 st.set_page_config(
-    page_title="企業資產管理大資料庫",
+    page_title="資產管理資料庫",
     page_icon="🏢",
     layout="wide"
 )
@@ -27,7 +27,7 @@ STATUS_OPTIONS = ["全部", "使用中", "轉移中", "閒置", "備用", "待�
 RAW_STATUS_OPTIONS = ["使用中", "轉移中", "閒置", "備用", "待報廢"]
 
 # 左側邊欄選單分頁
-st.sidebar.title("🏢 資產大資料庫")
+st.sidebar.title("🏢 資產資料庫")
 menu = st.sidebar.radio(
     "業務分類選單",
     [
