@@ -4,7 +4,7 @@ from datetime import datetime
 from supabase import create_client, Client
 
 st.set_page_config(
-    page_title="企業資產管理大資料庫",
+    page_title="資產管理資料庫",
     page_icon="🏢",
     layout="wide"
 )
