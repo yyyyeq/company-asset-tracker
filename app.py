@@ -49,40 +49,40 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 動態抓取「同仁姓名與工號對照表」
+# 動態抓取「姓名與工號對照表」
 def get_employee_directory():
     res = supabase.table("assets").select("holder_name, user_id_code").execute()
     data = res.data or []
     if not data:
-        return pd.DataFrame(columns=["同仁姓名", "工號", "持有設備總數"])
+        return pd.DataFrame(columns=["姓名", "工號", "持有設備總數"])
     
     df_emp = pd.DataFrame(data)
     df_emp = df_emp[df_emp["holder_name"].notna() & (df_emp["holder_name"].str.strip() != "") & (df_emp["holder_name"] != "None")]
     if df_emp.empty:
-        return pd.DataFrame(columns=["同仁姓名", "工號", "持有設備總數"])
+        return pd.DataFrame(columns=["姓名", "工號", "持有設備總數"])
     
     df_emp["holder_name"] = df_emp["holder_name"].astype(str).str.strip()
     df_emp["user_id_code"] = df_emp["user_id_code"].fillna("").astype(str).str.strip().replace({"None": "", "nan": ""})
     
     summary = df_emp.groupby(["holder_name", "user_id_code"]).size().reset_index(name="持有設備總數")
-    summary = summary.rename(columns={"holder_name": "同仁姓名", "user_id_code": "工號"})
+    summary = summary.rename(columns={"holder_name": "姓名", "user_id_code": "工號"})
     return summary
 
 # 通用過濾與搜尋小工具函式 (含：依順序排列的工號對照表)
 def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
-    with st.expander("👥 點此展開【同仁姓名與工號速查表】", expanded=False):
+    with st.expander("👥 點此展開【姓名與工號速查表】", expanded=False):
         emp_df = get_employee_directory()
         if not emp_df.empty:
             q_col, sort_col, order_col = st.columns([2, 1, 1])
             emp_search = q_col.text_input("🔍 關鍵字過濾", key=f"emp_search_{menu_name}", placeholder="輸入姓名或工號...")
-            sort_by = sort_col.selectbox("排序依據", ["工號", "同仁姓名", "持有設備總數"], key=f"emp_sort_{menu_name}")
+            sort_by = sort_col.selectbox("排序依據", ["工號", "姓名", "持有設備總數"], key=f"emp_sort_{menu_name}")
             sort_order = order_col.selectbox("順序", ["由小到大 (遞增)", "由大到小 (遞減)"], key=f"emp_order_{menu_name}")
             
             filtered_emp = emp_df.copy()
             if emp_search:
                 s = emp_search.strip().lower()
                 filtered_emp = filtered_emp[
-                    filtered_emp["同仁姓名"].str.lower().str.contains(s) | 
+                    filtered_emp["姓名"].str.lower().str.contains(s) | 
                     filtered_emp["工號"].str.lower().str.contains(s)
                 ]
             
@@ -93,7 +93,7 @@ def render_filter_and_search(menu_name, placeholder_text="搜尋..."):
             st.caption(f"共 {len(filtered_emp)} 位同仁（目前依【{sort_by}】{sort_order} 排列）")
             st.dataframe(filtered_emp, use_container_width=True, hide_index=True, height=200)
         else:
-            st.caption("目前資料庫中尚無同仁姓名資料。")
+            st.caption("目前資料庫中尚無姓名資料。")
 
     # 主搜尋列
     c1, c2, c3 = st.columns([1, 1, 2])
